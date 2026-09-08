@@ -12,6 +12,7 @@
 	import RoleCard from '$lib/components/RoleCard.svelte';
 	import Link from '@lucide/svelte/icons/link';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
+	import User from '@lucide/svelte/icons/user';
 
 	const code = ($page.params.code ?? '').toUpperCase();
 
@@ -182,6 +183,37 @@
 	const lastRound = $derived(!!r && r.config.rounds > 0 && r.round >= r.config.rounds);
 
 	const expire = () => act(() => api.expirePhase({ code }));
+
+	// spell out which scoring case the round landed in, read back off the deltas
+	const scoreNote = $derived.by(() => {
+		const d = res?.scoreDeltas;
+		if (!r || !res?.outcome || !d) return null;
+		const earned = (pts: number) =>
+			r.players.filter((p) => p.uid !== res.imposterUid && d[p.uid] === pts).map((p) => p.name);
+
+		if (res.outcome === 'ALL_LOSE')
+			return { lead: 'ทายคำไม่ทัน รอบนี้ไม่มีใครได้แต้ม', names: [], tail: '' };
+
+		if (res.outcome === 'COMMONS_WIN') {
+			const names = earned(2);
+			return names.length
+				? { lead: 'เสียงส่วนมากโหวตคนร้ายถูก ทำให้ ', names, tail: ' ได้ไปคนละ 2 คะแนน' }
+				: { lead: 'วงจับคนร้ายได้', names: [], tail: '' };
+		}
+
+		const names = earned(1);
+		return names.length
+			? {
+					lead: 'เสียงส่วนน้อยโหวตคนร้ายถูก ทำให้ ',
+					names,
+					tail: ' ได้ไปคนละ 1 คะแนน และคนร้ายได้ 1 คะแนน'
+				}
+			: {
+					lead: 'ไม่มีใครโหวตคนร้ายถูกเลย ',
+					names: [res.imposterName ?? 'คนร้าย'],
+					tail: ' ได้ไป 2 คะแนน'
+				};
+	});
 </script>
 
 <div class="panel">
@@ -227,7 +259,10 @@
 		{#if error}<p class="notice">{error}</p>{/if}
 	{:else}
 		<div class="header">
-			<span class="room">{r.code}</span>
+			<span class="seat">
+				<span class="room">{r.code}</span>
+				{#if me}<User size={20} aria-label="User" /><span class="me">{me.name}</span>{/if}
+			</span>
 			{#if priv && inPlay}
 				<span class="role-chip {priv.role}">{ROLE_LABEL[priv.role]}</span>
 			{/if}
@@ -540,6 +575,12 @@
 			{/if}
 			<p class="recap">
 				คนร้ายรอบนี้คือ <b>{res?.imposterName ?? '—'}</b><br />{#if res?.word} คำตอบคือ <b>{res.word}</b>{/if}
+				{#if scoreNote}
+					<br />{scoreNote.lead}{#each scoreNote.names as n, i (n + i)}<b>{n}</b>{i <
+						scoreNote.names.length - 1
+							? ', '
+							: ''}{/each}{scoreNote.tail}
+				{/if}
 			</p>
 			<div class="paper">
 				<h3>แต้มรอบนี้</h3>
@@ -600,6 +641,20 @@
 <style>
 	.share {
 		margin-top: 2px;
+	}
+
+	.seat {
+		display: flex;
+		align-items: baseline;
+		gap: 9px;
+		min-width: 0;
+	}
+	.me {
+		color: var(--ink-dim);
+		max-width: 12ch;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.role-chip {
