@@ -1,0 +1,393 @@
+/* Imposter Word — a theatre programme for a spoken party game.
+   One committed look: a darkened room. No light theme. */
+
+:root {
+	color-scheme: dark;
+
+	--bg: #1b1917;
+	--panel: #211e1b;
+	--surface: #272320;
+	--surface-hi: #322d28;
+	--edge: #423b33;
+	--edge-hair: #37312b;
+
+	--ink: #f5eee1;
+	--ink-dim: #c2b7a5;
+	--ink-faint: #9a8f7d;
+
+	--brass: #cf9a4c;
+	--brass-hi: #e2b268;
+	--brass-ink: #2a1d09;
+	--brass-line: rgba(207, 154, 76, 0.5);
+	--jade: #74b28b;
+	--jade-ink: #0f241a;
+	--red: #dc463c;
+	--red-deep: #a5342b;
+
+	--r-btn: 12px;
+	--r-card: 18px;
+	--r-pill: 999px;
+
+	--display: 'Chonburi', 'Noto Serif Thai', Georgia, serif;
+	--text: 'Anuphan', 'Noto Sans Thai', 'Segoe UI', system-ui, sans-serif;
+
+	--gutter: 18px;
+	--panel-w: 440px;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+}
+
+body {
+	background: var(--bg);
+	color: var(--ink);
+	font-family: var(--text);
+	font-size: 15px;
+	line-height: 1.55;
+	font-weight: 400;
+	-webkit-text-size-adjust: 100%;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+	/* Thai runs have no inter-word spaces; without this a long phrase can refuse
+	   to break and push the column wider than the viewport */
+	overflow-wrap: break-word;
+}
+
+/* a single warm wash at the top, like a lamp over the programme */
+.app {
+	min-height: 100dvh;
+	display: flex;
+	justify-content: center;
+	padding: clamp(0px, 4vw, 40px) var(--gutter);
+	background:
+		radial-gradient(120% 60% at 50% 0%, rgba(207, 154, 76, 0.06), transparent 70%),
+		var(--bg);
+}
+
+.panel {
+	width: 100%;
+	min-width: 0; /* flex item must be allowed to shrink below its content width */
+	max-width: var(--panel-w);
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+	padding-bottom: 40px;
+}
+
+/* ---------- running header ---------- */
+.header {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--edge-hair);
+	font-size: 12px;
+	color: var(--ink-faint);
+}
+.header .room {
+	font-family: var(--display);
+	font-size: 15px;
+	letter-spacing: 0.34em;
+	color: var(--ink-dim);
+}
+
+/* ---------- two registers: centred spectacle vs left-aligned admin ---------- */
+.stage {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	text-align: center;
+	gap: 14px;
+	padding: 8px 0;
+}
+.admin {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.masthead {
+	font-family: var(--display);
+	font-size: clamp(34px, 10vw, 46px);
+	line-height: 1;
+	font-weight: 400;
+	margin: 0;
+}
+.masthead span {
+	display: block;
+}
+.tagline {
+	color: var(--ink);
+	font-size: 16px;
+	max-width: 30ch;
+	line-height: 1.45;
+	margin: 0;
+	text-wrap: balance;
+}
+
+/* headline for a spoken moment: role word, verdict */
+.proclaim {
+	font-family: var(--display);
+	font-size: 30px;
+	line-height: 1.12;
+	font-weight: 400;
+	text-wrap: balance;
+}
+
+h2,
+h3 {
+	font-family: var(--display);
+	font-weight: 400;
+	font-size: 19px;
+	margin: 0;
+	line-height: 1.2;
+}
+
+.hint {
+	font-size: 13px;
+	color: var(--ink-faint);
+	line-height: 1.5;
+}
+.stage .hint {
+	max-width: 34ch;
+}
+
+/* ---------- buttons ---------- */
+.btn {
+	appearance: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	width: 100%;
+	border: 1px solid var(--edge);
+	background: var(--surface);
+	color: var(--ink);
+	font-family: var(--text);
+	font-size: 15px;
+	font-weight: 600;
+	padding: 14px 16px;
+	border-radius: var(--r-btn);
+	cursor: pointer;
+	transition:
+		filter 0.12s ease,
+		transform 0.06s ease,
+		border-color 0.12s ease;
+}
+.btn:hover:not(:disabled) {
+	filter: brightness(1.1);
+}
+.btn:active:not(:disabled) {
+	transform: translateY(1px);
+}
+.btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+.btn:focus-visible {
+	outline: 2px solid var(--brass-hi);
+	outline-offset: 2px;
+}
+.btn-primary {
+	background: var(--brass);
+	border-color: var(--brass);
+	color: var(--brass-ink);
+	font-weight: 700;
+}
+.btn-danger {
+	background: transparent;
+	border-color: var(--red-deep);
+	color: var(--red);
+}
+.btn-danger:hover:not(:disabled) {
+	background: rgba(220, 70, 60, 0.1);
+	filter: none;
+}
+.btn-quiet {
+	background: transparent;
+	font-weight: 500;
+	color: var(--ink-dim);
+}
+
+.btns {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+/* ---------- form ---------- */
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+}
+.field-label {
+	font-size: 13px;
+	color: var(--ink-dim);
+}
+.input {
+	width: 100%;
+	background: var(--bg);
+	border: 1px solid var(--edge);
+	border-radius: var(--r-btn);
+	color: var(--ink);
+	font-family: var(--text);
+	font-size: 16px;
+	padding: 13px 14px;
+}
+.input:focus-visible {
+	outline: 2px solid var(--brass-hi);
+	outline-offset: 1px;
+}
+.input-code {
+	font-family: var(--display);
+	font-size: 26px;
+	letter-spacing: 0.42em;
+	text-align: center;
+	text-transform: uppercase;
+	padding-left: calc(14px + 0.42em);
+}
+
+/* segmented control */
+.seg {
+	display: flex;
+	border: 1px solid var(--edge);
+	border-radius: var(--r-pill);
+	overflow: hidden;
+}
+.seg button {
+	appearance: none;
+	flex: 1;
+	border: 0;
+	border-left: 1px solid var(--edge-hair);
+	background: transparent;
+	color: var(--ink-dim);
+	font-family: var(--text);
+	font-size: 13px;
+	padding: 9px 6px;
+	cursor: pointer;
+}
+.seg button:first-child {
+	border-left: 0;
+}
+.seg button[aria-pressed='true'] {
+	background: var(--brass);
+	color: var(--brass-ink);
+	font-weight: 700;
+}
+.seg button:focus-visible {
+	outline: 2px solid var(--brass-hi);
+	outline-offset: -2px;
+}
+
+/* ---------- raised paper (config, ledgers) ---------- */
+.paper {
+	background: var(--panel);
+	border: 1px solid var(--edge-hair);
+	border-radius: var(--r-card);
+	padding: 18px;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+.paper > h3 {
+	color: var(--ink-dim);
+}
+
+/* ---------- roster ---------- */
+.roster {
+	display: flex;
+	flex-direction: column;
+}
+.roster-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 10px 0;
+	border-top: 1px solid var(--edge-hair);
+}
+.roster-row:first-child {
+	border-top: 0;
+}
+.who {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-width: 0;
+}
+.who span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.status-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--ink-faint);
+	flex: none;
+}
+.status-dot.live {
+	background: var(--jade);
+}
+.chip {
+	flex: none;
+	font-size: 12px;
+	padding: 2px 9px;
+	border-radius: var(--r-pill);
+	border: 1px solid var(--edge);
+	color: var(--ink-dim);
+}
+.chip-host {
+	border-color: var(--brass);
+	color: var(--brass);
+}
+.chip-ready {
+	border-color: var(--jade);
+	color: var(--jade);
+}
+
+/* ---------- misc ---------- */
+.notice {
+	font-size: 13px;
+	color: var(--red);
+	text-align: center;
+}
+.center-hint {
+	text-align: center;
+	font-size: 13px;
+	color: var(--ink-faint);
+}
+
+.bigcode {
+	appearance: none;
+	border: 1px dashed var(--edge);
+	background: transparent;
+	color: var(--ink);
+	font-family: var(--display);
+	font-size: clamp(44px, 13vw, 58px);
+	letter-spacing: 0.3em;
+	padding: 14px 8px 14px 30px;
+	border-radius: var(--r-card);
+	cursor: pointer;
+	width: 100%;
+}
+.bigcode:focus-visible {
+	outline: 2px solid var(--brass-hi);
+	outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* {
+		animation-duration: 0.001ms !important;
+		transition-duration: 0.001ms !important;
+	}
+}

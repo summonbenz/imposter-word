@@ -1,0 +1,18 @@
+node_modules/
+/build
+/.svelte-kit
+/package
+/.tools
+.env
+.env.*
+!.env.example
+vite.config.ts.timestamp-*
+vite.config.js.timestamp-*
+
+# firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+functions/lib/
+functions/node_modules/
