@@ -43,6 +43,14 @@ firebase deploy --only firestore:rules,functions
 npm run build && firebase deploy --only hosting
 ```
 
+Frontend เป็น SPA ล้วน (`ssr = false`, ไม่ prerender) — build ออกมามีแค่ `build/index.html` ไฟล์เดียว
+ไม่มี `build/room/[code]/index.html` จริง ๆ ดังนั้นโฮสต์ต้อง **rewrite ทุก path ที่ไม่ match ไฟล์ static ให้ไปที่ `/index.html`**
+ไม่งั้นเปิดลิงก์ตรง ๆ (เช่น `/room/NPPV5` ที่แชร์ให้เพื่อน) จะได้ 404 แม้จะกดสร้าง/เข้าห้องจากหน้าแรกได้ปกติ (เพราะนั่นเป็นการนำทางฝั่ง client ไม่ได้ยิง request ใหม่ไปที่โฮสต์)
+
+- Firebase Hosting: จัดการให้แล้วผ่าน `hosting.rewrites` ใน `firebase.json`
+- Vercel: ต้องมี `vercel.json` ที่ root พร้อม rewrite แบบเดียวกัน (มีให้แล้วในโปรเจกต์นี้)
+- โฮสต์อื่น (Netlify ฯลฯ) ต้องตั้ง SPA fallback ในลักษณะเดียวกันเอง
+
 ## โครงสร้าง
 
 ```
