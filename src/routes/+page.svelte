@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { api, errText } from '$lib/firebase/api';
 	import { ensureAuth, myName, saveName } from '$lib/firebase/session';
-	import { MIN_PLAYERS } from '$game/types';
+	import { CODE_LENGTH, MIN_PLAYERS } from '$game/types';
 
 	let name = $state('');
 	let code = $state('');
@@ -45,8 +45,8 @@
 	const join = () =>
 		run('join', async () => {
 			const c = code.trim().toUpperCase();
-			if (!/^[A-Z0-9]{4}$/.test(c)) {
-				error = 'รหัสห้องมี 4 ตัวอักษร';
+			if (!new RegExp(`^[A-Z0-9]{${CODE_LENGTH}}$`).test(c)) {
+				error = `รหัสห้องมี ${CODE_LENGTH} ตัวอักษร`;
 				return;
 			}
 			await api.joinRoom({ code: c, name: name.trim() });
@@ -72,7 +72,7 @@
 			แต่มีหนึ่งคนรู้คำนั้นมาตั้งแต่แรก
 		</p>
 		<p class="housenote">
-			เล่น {MIN_PLAYERS} คนขึ้นไป คู่กับห้องเสียงหรือนั่งวงเดียวกัน<br />
+			เล่น {MIN_PLAYERS} คนขึ้นไป แนะนำให้เล่นใน Voice Chat หรือนั่งวงเดียวกัน<br />
 			แอปถือคำลับ จับเวลา และนับแต้มให้
 		</p>
 	</div>
@@ -99,7 +99,7 @@
 		<div class="or"><span>หรือเข้าห้องของเพื่อน</span></div>
 
 		<div class="field">
-			<label class="field-label" for="code">รหัสห้อง 4 ตัว</label>
+			<label class="field-label" for="code">รหัสห้อง {CODE_LENGTH} ตัว</label>
 			<input
 				class="input input-code"
 				id="code"
@@ -109,8 +109,8 @@
 				spellcheck="false"
 				value={code}
 				oninput={(e) => (code = e.currentTarget.value.toUpperCase())}
-				maxlength="4"
-				placeholder="QH7K"
+				maxlength={CODE_LENGTH}
+				placeholder="QH7KD"
 				enterkeyhint="go"
 				onkeydown={enter(join)}
 			/>
@@ -125,14 +125,14 @@
 	<section class="howto">
 		<h2>วิธีเล่น</h2>
 
-		<h3>ใครเป็นใคร</h3>
+		<h3>บทบาท</h3>
 		<ul class="cast" role="list">
 			<li class="master">
 				<p class="who">ผู้ดำเนินเกม <span>Moderator</span></p>
-				<p class="what">รู้คำลับ ตอบคำถามได้แค่ใช่หรือไม่ใช่</p>
+				<p class="what">รู้คำลับ ตอบคำถามได้แค่ใช่/ไม่ใช่/ไม่แน่ใจ</p>
 			</li>
 			<li class="imposter">
-				<p class="who">ตัวปลอม <span>Imposter</span></p>
+				<p class="who">คนร้าย <span>Imposter</span></p>
 				<p class="what">รู้คำลับเหมือนกัน แต่ต้องไม่ให้ใครจับได้ว่ารู้</p>
 			</li>
 			<li class="common">
@@ -141,7 +141,7 @@
 			</li>
 		</ul>
 
-		<h3>หนึ่งรอบเป็นยังไง</h3>
+		<h3>ในหนึ่งเกมมีเฟสอะไรบ้าง</h3>
 		<ol class="order" role="list">
 			<li>
 				<b>เปิดบทบาท</b>
@@ -161,16 +161,16 @@
 			</li>
 		</ol>
 
-		<h3>ใครได้แต้ม</h3>
+		<h3>วิธีการนับคะแนน</h3>
 		<dl class="score">
-			<dt>จับตัวปลอมได้</dt>
-			<dd>ทุกคนยกเว้นตัวปลอม ได้ 1 แต้ม</dd>
-			<dt>จับผิดคน</dt>
-			<dd>ตัวปลอมได้ 2 แต้ม</dd>
+			<dt>เสียงส่วนมากจับคนร้ายได้</dt>
+			<dd>คนที่โหวตคนร้าย ได้คนละ 2 แต้ม คนร้ายไม่ได้แต้ม</dd>
+			<dt>วงจับผิดคน แต่มีคนโหวตคนร้ายถูก</dt>
+			<dd>คนที่โหวตถูก ได้คนละ 1 แต้ม คนร้ายได้ 1 แต้ม</dd>
+			<dt>ไม่มีใครโหวตถูกเลย</dt>
+			<dd>คนร้ายได้ 2 แต้ม</dd>
 			<dt>ทายคำไม่ทัน</dt>
 			<dd>ไม่มีใครได้แต้ม</dd>
-			<dt>คนที่พูดคำลับออกมา</dt>
-			<dd>ได้เพิ่มอีก 1 แต้ม ทุกครั้งที่ทายคำได้</dd>
 		</dl>
 	</section>
 </div>

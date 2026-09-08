@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { api, errText } from '$lib/firebase/api';
-	import { ensureAuth, loadName } from '$lib/firebase/session';
+	import { ensureAuth, loadName, saveName } from '$lib/firebase/session';
 	import { presenceStore, privateStore, roomStore, type RoomState } from '$lib/firebase/room';
 	import { PACK_LIST } from '$game/words';
 	import { MIN_PLAYERS, PRESENCE_STALE_MS, QUESTION_CHOICES, ROUND_CHOICES, VOTE_CHOICES } from '$game/types';
-	import type { Outcome, Player, PrivateState, PublicRoom } from '$game/types';
+	import type { Outcome, Player, PrivateState, PublicRoom, Role } from '$game/types';
 	import Timer from '$lib/components/Timer.svelte';
 	import VoteBar from '$lib/components/VoteBar.svelte';
 	import RoleCard from '$lib/components/RoleCard.svelte';
+	import Link from '@lucide/svelte/icons/link';
+	import EyeOff from '@lucide/svelte/icons/eye-off';
 
 	const code = ($page.params.code ?? '').toUpperCase();
 
@@ -25,16 +26,28 @@
 	let votePick = $state<string | null>(null);
 	let locked = $state(false);
 	let copied = $state(false);
+	let copiedLink = $state(false);
+	let needName = $state(false);
+	let nameInput = $state('');
+	let joining = $state(false);
+
+	const unsubs: Array<() => void> = [];
+
+	function watchRoom(u: string) {
+		unsubs.push(roomStore(code).subscribe((v) => (room = v)));
+		unsubs.push(privateStore(code, u).subscribe((v) => (priv = v)));
+		unsubs.push(presenceStore(code, u).subscribe((v) => (presence = v)));
+	}
 
 	onMount(() => {
 		const iv = setInterval(() => (now = Date.now()), 1000);
-		const unsubs: Array<() => void> = [];
 		(async () => {
 			const u = await ensureAuth();
 			uid = u;
 			const name = loadName();
+			// arrived by shared link with no nickname yet — ask for one here, keep the code
 			if (!name) {
-				await goto('/');
+				needName = true;
 				return;
 			}
 			try {
@@ -42,9 +55,7 @@
 			} catch (e) {
 				error = errText(e);
 			}
-			unsubs.push(roomStore(code).subscribe((v) => (room = v)));
-			unsubs.push(privateStore(code, u).subscribe((v) => (priv = v)));
-			unsubs.push(presenceStore(code, u).subscribe((v) => (presence = v)));
+			watchRoom(u);
 		})();
 		return () => {
 			clearInterval(iv);
@@ -52,10 +63,33 @@
 		};
 	});
 
+	async function joinWithName() {
+		const n = nameInput.trim();
+		if (!n) {
+			error = 'ใส่ชื่อเล่นก่อนเข้าห้อง';
+			return;
+		}
+		error = '';
+		joining = true;
+		try {
+			const u = uid ?? (await ensureAuth());
+			uid = u;
+			saveName(n);
+			await api.joinRoom({ code, name: n });
+			needName = false;
+			watchRoom(u);
+		} catch (e) {
+			error = errText(e);
+		} finally {
+			joining = false;
+		}
+	}
+
 	const r = $derived(room && room !== 'missing' ? (room as PublicRoom) : null);
 	const me = $derived(r && uid ? (r.players.find((p) => p.uid === uid) ?? null) : null);
 	const isHost = $derived(!!me?.isHost);
 	const isMaster = $derived(!!r && !!uid && r.masterUid === uid);
+	const masterName = $derived(r ? (r.players.find((p) => p.uid === r.masterUid)?.name ?? '') : '');
 	const res = $derived(r?.results ?? null);
 	const accused = $derived(
 		res?.accusedUid && r ? (r.players.find((p) => p.uid === res.accusedUid) ?? null) : null
@@ -64,10 +98,6 @@
 	const standings = $derived(r ? [...r.players].sort((a, b) => b.score - a.score) : []);
 	const allReady = $derived(!!r && r.players.length >= MIN_PLAYERS && r.players.every((p) => p.ready));
 	const acked = $derived(!!r && !!uid && r.revealAcks.includes(uid));
-	const wordFinder = $derived(
-		r?.wordFoundBy ? (r.players.find((p) => p.uid === r.wordFoundBy) ?? null) : null
-	);
-	const iAmFinder = $derived(!!r && !!uid && r.wordFoundBy === uid);
 	const tiedPlayers = $derived<Player[]>(
 		r && res?.tiedUids?.length
 			? res.tiedUids
@@ -112,11 +142,37 @@
 		}
 	}
 
+	async function copyLink() {
+		const url = `${location.origin}/room/${code}`;
+		try {
+			await navigator.clipboard.writeText(url);
+			copiedLink = true;
+			setTimeout(() => (copiedLink = false), 1800);
+		} catch {
+			// no clipboard (http, old iOS) — hand it to the share sheet instead
+			try {
+				await navigator.share?.({ title: 'Imposter Word', text: `เข้าห้อง ${code}`, url });
+			} catch {
+				/* user dismissed the share sheet */
+			}
+		}
+	}
+
 	const OUTCOME: Record<Outcome, { head: string; sub: string; win: boolean }> = {
-		COMMONS_WIN: { head: 'ประชาชนชนะ', sub: 'จับตัวปลอมได้ และทายคำสำเร็จ', win: true },
-		IMPOSTER_WIN: { head: 'ตัวปลอมชนะ', sub: 'วงลงมติผิดคน', win: false },
+		COMMONS_WIN: { head: 'ประชาชนชนะ', sub: 'จับคนร้ายได้ และทายคำสำเร็จ', win: true },
+		IMPOSTER_WIN: { head: 'คนร้ายชนะ', sub: 'วงลงมติผิดคน', win: false },
 		ALL_LOSE: { head: 'แพ้ทั้งวง', sub: 'ทายคำไม่ทันเวลา', win: false }
 	};
+
+	const ROLE_LABEL: Record<Role, string> = {
+		common: 'ประชาชน',
+		master: 'ผู้ดำเนินเกม',
+		imposter: 'คนร้าย'
+	};
+	// role stays on the topbar through the played phases, so nobody has to reopen their card
+	const inPlay = $derived(
+		!!r && ['QUESTION', 'DISCUSSION', 'VOTE', 'TIEBREAK'].includes(r.status)
+	);
 
 	const roundText = $derived(
 		r && r.status !== 'LOBBY'
@@ -129,7 +185,38 @@
 </script>
 
 <div class="panel">
-	{#if room === 'missing'}
+	{#if needName}
+		<div class="stage">
+			<h1 class="masthead"><span>Imposter</span><span>Word</span></h1>
+			<p class="tagline">เพื่อนชวนคุณเข้าห้อง <b>{code}</b></p>
+		</div>
+
+		<div class="admin">
+			<div class="field">
+				<label class="field-label" for="name">ชื่อเล่นของคุณ</label>
+				<input
+					class="input"
+					id="name"
+					type="text"
+					bind:value={nameInput}
+					maxlength="20"
+					placeholder="บอส"
+					enterkeyhint="go"
+					onkeydown={(e) => {
+						if (e.key === 'Enter') {
+							e.preventDefault();
+							joinWithName();
+						}
+					}}
+				/>
+			</div>
+			<button class="btn btn-primary" onclick={joinWithName} disabled={joining}>
+				{joining ? 'กำลังเข้าห้อง…' : `เข้าห้อง ${code}`}
+			</button>
+			{#if error}<p class="notice">{error}</p>{/if}
+			<a class="center-hint" href="/">ยังไม่รู้จักเกมนี้ ดูวิธีเล่น</a>
+		</div>
+	{:else if room === 'missing'}
 		<div class="stage">
 			<h1 class="proclaim">ไม่พบห้อง {code}</h1>
 			<p class="hint">ห้องอาจปิดไปแล้ว หรือพิมพ์รหัสผิด</p>
@@ -141,6 +228,9 @@
 	{:else}
 		<div class="header">
 			<span class="room">{r.code}</span>
+			{#if priv && inPlay}
+				<span class="role-chip {priv.role}">{ROLE_LABEL[priv.role]}</span>
+			{/if}
 			<span>{roundText}</span>
 		</div>
 
@@ -148,7 +238,12 @@
 			<div class="stage">
 				<span class="hint">รหัสห้อง ส่งให้เพื่อน</span>
 				<button class="bigcode" onclick={copyCode}>{r.code}</button>
-				<span class="hint">{copied ? 'คัดลอกแล้ว' : 'แตะเพื่อคัดลอก'}</span>
+				<span class="hint">{copied ? 'คัดลอกรหัสแล้ว' : 'แตะเพื่อคัดลอกรหัส'}</span>
+				<button class="btn share" onclick={copyLink}>
+					<Link size={16} aria-hidden="true" />
+					{copiedLink ? 'คัดลอกลิงก์แล้ว' : 'คัดลอกลิงก์ชวนเพื่อน'}
+				</button>
+				<span class="hint">เพื่อนกดลิงก์ ใส่ชื่อเล่น แล้วเข้าห้องนี้ได้เลย</span>
 			</div>
 
 			<div class="paper">
@@ -227,7 +322,7 @@
 
 				{#if isHost}
 					<button class="btn btn-primary" onclick={() => act(() => api.startRound({ code }))} disabled={busy || !allReady}>
-						เริ่มรอบ
+						เริ่มเกม
 					</button>
 				{/if}
 			</div>
@@ -242,7 +337,15 @@
 			<div class="stage">
 				<h2 class="proclaim">บทบาทของคุณ</h2>
 				{#if priv}
-					<RoleCard role={priv.role} word={priv.word} interactive flipped={acked} />
+					<RoleCard
+						role={priv.role}
+						word={priv.word}
+						interactive
+						flipped={acked}
+						caption={priv.role !== 'master' && masterName
+							? `ผู้ดำเนินเกมในรอบนี้คือ ${masterName}`
+							: 'คุณมีหน้าที่ตอบคำถามได้แค่ ใช่ / ไม่ / ไม่แน่ใจ เท่านั้น'}
+					/>
 				{/if}
 			</div>
 			{#if priv}
@@ -250,7 +353,7 @@
 					<button class="btn btn-primary" onclick={() => act(() => api.ackReveal({ code }))} disabled={busy || acked}>
 						{acked ? 'พร้อมแล้ว' : 'เห็นแล้ว พร้อมเริ่ม'}
 					</button>
-					{#if isHost}
+					{#if isMaster}
 						<button class="btn btn-quiet" onclick={() => act(() => api.forceQuestion({ code }))} disabled={busy}>
 							ข้ามไปช่วงถาม
 						</button>
@@ -265,11 +368,18 @@
 			</div>
 			<div class="word-line" class:known={!!priv?.word}>
 				<span>คำลับ</span>
-				<span class="w">{priv?.word ?? 'ซ่อนอยู่'}</span>
+				<span class="w">
+					{#if priv?.word}
+						{priv.word}
+					{:else}
+						<EyeOff size={20} aria-label="ซ่อนอยู่" />
+					{/if}
+				</span>
 			</div>
 			{#if isMaster}
 				<div class="admin">
-					<h3>เมื่อวงทายคำถูก แตะชื่อคนที่พูดคำนั้น</h3>
+					<p class="center-hint">ตอบคำถามได้แค่ว่า ใช่ / ไม่ / ไม่แน่ใจ เท่านั้น</p>
+					<h3>แตะชื่อคนที่ตอบถูก</h3>
 					<div class="tokens">
 						{#each r.players.filter((p) => p.uid !== r.masterUid) as p (p.uid)}
 							<button
@@ -285,22 +395,24 @@
 					<button class="btn btn-danger" onclick={() => act(() => api.giveUp({ code }))} disabled={busy}>
 						ยอมแพ้ หมดมุกแล้ว
 					</button>
-					<p class="center-hint">คนที่คุณเลือกได้โบนัส 1 คะแนน</p>
+					<p class="center-hint">คนที่คุณเลือกจะเป็นคนตัดสิน ถ้าโหวตออกมาเสมอกัน</p>
 				</div>
 			{:else}
-				<p class="center-hint">ถามผู้ดำเนินเกมเป็นคำถามใช่หรือไม่ใช่ ในห้องเสียง</p>
+				<p class="center-hint">ถามผู้ดำเนินเกมเป็นคำถามใช่หรือไม่ใช่</p>
 			{/if}
 
 		{:else if r.status === 'DISCUSSION'}
 			<div class="stage">
 				<Timer endsAt={r.phaseEndsAt} totalSeconds={r.config.discussionSeconds} label="เวลาถกเถียง" onExpire={expire} />
 				<h2 class="proclaim">ทายคำได้แล้ว</h2>
-				<p class="hint">คุยกันว่าใครคือตัวปลอมที่แอบรู้คำมาตั้งแต่ต้น</p>
+				<p class="hint">คุยกันว่าใครคือคนร้ายที่แอบรู้คำมาตั้งแต่ต้น</p>
 			</div>
-			{#if isHost}
+			{#if isMaster}
 				<button class="btn btn-primary" onclick={() => act(() => api.startVote({ code }))} disabled={busy}>
 					เริ่มโหวต
 				</button>
+			{:else}
+				<p class="center-hint">ผู้ดำเนินเกมเป็นคนเปิดโหวต หรือรอหมดเวลา</p>
 			{/if}
 
 		{:else if r.status === 'VOTE'}
@@ -308,7 +420,7 @@
 				<VoteBar endsAt={r.phaseEndsAt} totalSeconds={r.config.voteSeconds} onExpire={expire} />
 			{/if}
 			<div class="admin">
-				<h2>โหวตหาตัวปลอม</h2>
+				<h2>โหวตหาคนร้าย</h2>
 				<p class="hint">เลือกคนที่คุณคิดว่าแอบรู้คำมาตั้งแต่ต้น</p>
 				<div class="tokens">
 					{#each r.players as p (p.uid)}
@@ -333,20 +445,20 @@
 							locked = true;
 						})}
 				>
-					{locked ? 'ล็อกโหวตแล้ว' : 'ล็อกโหวต'}
+					{locked ? 'โหวตแล้ว' : 'โหวต'}
 				</button>
-				<p class="center-hint">ล็อกแล้ว {r.votesLocked} จาก {r.players.length} คน เปิดพร้อมกันเมื่อครบหรือหมดเวลา</p>
+				<p class="center-hint">โหวตแล้ว {r.votesLocked} จาก {r.players.length} คน เปิดพร้อมกันเมื่อครบหรือหมดเวลา</p>
 			</div>
 
 		{:else if r.status === 'TIEBREAK'}
 			<div class="stage">
 				<h2 class="proclaim">คะแนนเสมอ</h2>
 				<p class="hint">
-					{#if iAmFinder}คุณเป็นคนทายคำถูก เลือกได้เลยว่าจะให้ตกที่ใคร
-					{:else}{wordFinder?.name ?? 'ผู้ทายคำถูก'} เป็นคนตัดสินว่าจะให้ตกที่ใคร{/if}
+					{#if isMaster}คุณเป็นผู้ดำเนินเกม ชี้ขาดได้เลยว่าจะให้ใครโดนแขวน
+					{:else}{masterName || 'ผู้ดำเนินเกม'} เป็นคนชี้ขาดว่าจะให้ใครโดนแขวน{/if}
 				</p>
 			</div>
-			{#if iAmFinder || isHost}
+			{#if isMaster}
 				<div class="tokens">
 					{#each tiedPlayers as p (p.uid)}
 						<button
@@ -360,9 +472,6 @@
 						</button>
 					{/each}
 				</div>
-				{#if isHost && !iAmFinder}
-					<p class="center-hint">คุณตัดสินแทนได้ในฐานะ host</p>
-				{/if}
 			{:else}
 				<div class="tally">
 					{#each tiedPlayers as p (p.uid)}
@@ -430,9 +539,7 @@
 				</div>
 			{/if}
 			<p class="recap">
-				ตัวปลอมรอบนี้คือ <b>{res?.imposterName ?? '—'}</b>{#if res?.word} คำคือ <b>{res.word}</b>{/if}
-				{#if wordFinder && res?.wordFound}<br /><b>{wordFinder.name}</b> ทายคำถูก +1{/if}
-				{#if res?.tieBrokenBy && wordFinder}<br />ตัดสินเสมอโดย <b>{wordFinder.name}</b>{/if}
+				คนร้ายรอบนี้คือ <b>{res?.imposterName ?? '—'}</b><br />{#if res?.word} คำตอบคือ <b>{res.word}</b>{/if}
 			</p>
 			<div class="paper">
 				<h3>แต้มรอบนี้</h3>
@@ -491,6 +598,32 @@
 </div>
 
 <style>
+	.share {
+		margin-top: 2px;
+	}
+
+	.role-chip {
+		font-family: var(--display);
+		font-size: 12px;
+		letter-spacing: 0.06em;
+		line-height: 1.4;
+		padding: 3px 11px;
+		border-radius: var(--r-pill);
+		white-space: nowrap;
+	}
+	.role-chip.master {
+		background: var(--brass);
+		color: var(--brass-ink);
+	}
+	.role-chip.imposter {
+		background: var(--red-deep);
+		color: var(--ink);
+	}
+	.role-chip.common {
+		background: var(--jade);
+		color: var(--jade-ink);
+	}
+
 	.word-line {
 		display: flex;
 		align-items: center;
@@ -502,6 +635,8 @@
 		color: var(--ink-faint);
 	}
 	.word-line .w {
+		display: inline-flex;
+		align-items: center;
 		font-family: var(--display);
 		font-size: 18px;
 		color: var(--ink-dim);

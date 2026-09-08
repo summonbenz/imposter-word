@@ -23,7 +23,7 @@ export type Outcome =
 export interface RoomConfig {
 	questionSeconds: number; // 180 | 300 | 480
 	discussionSeconds: number; // fixed
-	voteSeconds: number; // 0 = off | 30 | 45 | 60
+	voteSeconds: number; // 0 = off | 30 | 45 | 60 | 90 | 120
 	rounds: number; // 0 = endless (host ends) | 3 | 5
 	packId: string;
 	lang: 'th' | 'en';
@@ -31,19 +31,20 @@ export interface RoomConfig {
 
 export const DEFAULT_CONFIG: RoomConfig = {
 	questionSeconds: 300,
-	discussionSeconds: 150,
+	discussionSeconds: 60,
 	voteSeconds: 45,
 	rounds: 5,
 	packId: 'th-general',
 	lang: 'th'
 };
 
+export const CODE_LENGTH = 5;
 export const MIN_PLAYERS = 4;
 export const ROOM_TTL_MS = 2 * 60 * 60 * 1000; // 2h idle
 export const PRESENCE_STALE_MS = 20 * 1000;
 
 export const QUESTION_CHOICES = [180, 300, 480];
-export const VOTE_CHOICES = [0, 30, 45, 60];
+export const VOTE_CHOICES = [0, 30, 45, 60, 90, 120];
 export const ROUND_CHOICES = [0, 3, 5];
 
 export interface Player {

@@ -5,6 +5,7 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, type Transaction } from 'firebase-admin/firestore';
 
 import {
+	CODE_LENGTH,
 	MIN_PLAYERS,
 	ROOM_TTL_MS,
 	roleOf,
@@ -52,9 +53,10 @@ function cleanName(raw: unknown): string {
 	return s;
 }
 
+const CODE_RE = new RegExp(`^[A-Z0-9]{${CODE_LENGTH}}$`);
 function cleanCode(raw: unknown): string {
 	const s = typeof raw === 'string' ? raw.trim().toUpperCase() : '';
-	if (!/^[A-Z0-9]{4}$/.test(s)) throw new HttpsError('invalid-argument', 'รหัสห้องไม่ถูกต้อง');
+	if (!CODE_RE.test(s)) throw new HttpsError('invalid-argument', 'รหัสห้องไม่ถูกต้อง');
 	return s;
 }
 
@@ -74,6 +76,12 @@ async function withRoom<T>(
 
 function requireHost(room: PublicRoom, uid: string) {
 	if (room.hostUid !== uid) throw new HttpsError('permission-denied', 'ทำได้เฉพาะ host');
+}
+// the Moderator never holds a suspect role, so phase pushes that could rush the
+// table (opening the vote) belong to them, not to the host
+function requireMaster(room: PublicRoom, uid: string) {
+	if (room.masterUid !== uid)
+		throw new HttpsError('permission-denied', 'ทำได้เฉพาะผู้ดำเนินเกม');
 }
 function requireMember(room: PublicRoom, uid: string) {
 	if (!room.playerUids.includes(uid)) throw new HttpsError('permission-denied', 'ไม่ได้อยู่ในห้องนี้');
@@ -297,7 +305,7 @@ export const forceQuestion = onCall(async (req) => {
 	const uid = requireAuth(req);
 	const code = cleanCode(req.data?.code);
 	await withRoom(code, (room, t) => {
-		requireHost(room, uid);
+		requireMaster(room, uid);
 		if (room.status !== 'REVEAL') throw new HttpsError('failed-precondition', 'ไม่ได้อยู่ช่วงเปิดบทบาท');
 		t.update(roomRef(code), {
 			status: 'QUESTION',
@@ -378,7 +386,7 @@ export const startVote = onCall(async (req) => {
 	const uid = requireAuth(req);
 	const code = cleanCode(req.data?.code);
 	await withRoom(code, (room, t) => {
-		requireHost(room, uid);
+		requireMaster(room, uid);
 		if (room.status !== 'DISCUSSION') throw new HttpsError('failed-precondition', 'ยังไม่ถึงช่วงถกเถียง');
 		toVote(t, code, room);
 	});
@@ -412,7 +420,7 @@ async function finalizeVotesInternal(code: string) {
 			scoreDeltas: null
 		};
 		t.update(roomRef(code), {
-			// a tie hands the call to the word-finder before results are shown
+			// a tie hands the call to the Moderator before results are shown
 			status: tie ? 'TIEBREAK' : 'RESULT_VOTES',
 			phaseEndsAt: null,
 			results,
@@ -427,16 +435,15 @@ export const breakTie = onCall(async (req) => {
 	const target = typeof req.data?.targetUid === 'string' ? req.data.targetUid : null;
 	await withRoom(code, (room, t) => {
 		if (room.status !== 'TIEBREAK') throw new HttpsError('failed-precondition', 'ไม่มีคะแนนเสมอให้ตัดสิน');
-		const finder = room.wordFoundBy;
-		if (uid !== finder && uid !== room.hostUid)
-			throw new HttpsError('permission-denied', 'เฉพาะคนที่ทายคำถูก (หรือ host) เป็นคนตัดสิน');
+		// a tie is the Moderator's call: they are the one seat that never holds a suspect role
+		requireMaster(room, uid);
 		const r = room.results;
 		if (!r) throw new HttpsError('internal', 'ข้อมูลรอบหาย');
 		if (!target || !r.tiedUids.includes(target))
 			throw new HttpsError('invalid-argument', 'เลือกจากคนที่คะแนนเสมอกันเท่านั้น');
 		t.update(roomRef(code), {
 			status: 'RESULT_VOTES',
-			results: { ...r, accusedUid: target, tie: false, tieBrokenBy: finder },
+			results: { ...r, accusedUid: target, tie: false, tieBrokenBy: room.masterUid },
 			expiresAt: nextExpiry()
 		});
 	});
@@ -504,6 +511,7 @@ export const revealRole = onCall(async (req) => {
 	const code = cleanCode(req.data?.code);
 	await db.runTransaction(async (t) => {
 		const [rSnap, sSnap] = await t.getAll(roomRef(code), secretRef(code));
+		const vSnap = await t.get(roomRef(code).collection('votes'));
 		if (!rSnap.exists) throw new HttpsError('not-found', 'ไม่พบห้องนี้');
 		const room = rSnap.data() as PublicRoom;
 		requireHost(room, uid);
@@ -511,6 +519,10 @@ export const revealRole = onCall(async (req) => {
 			throw new HttpsError('failed-precondition', 'ยังไม่ถึงจังหวะเปิดบทบาท');
 		if (!sSnap.exists || !room.results) throw new HttpsError('internal', 'ข้อมูลรอบหาย');
 		const secret = sSnap.data() as SecretState;
+		const votes: Record<string, string> = {};
+		vSnap.forEach((d) => {
+			votes[d.id] = (d.data() as VoteDoc).targetUid;
+		});
 		const r = room.results;
 		const outcome = computeOutcome({
 			wordFound: r.wordFound,
@@ -529,9 +541,8 @@ export const revealRole = onCall(async (req) => {
 			scoreDeltas: computeScoreDeltas({
 				outcome,
 				players: room.players,
-				masterUid: secret.masterUid,
 				imposterUid: secret.imposterUid,
-				wordFoundBy: room.wordFoundBy
+				votes
 			})
 		};
 		t.update(roomRef(code), { status: 'RESULT_ROLE', results, expiresAt: nextExpiry() });

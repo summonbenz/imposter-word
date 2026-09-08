@@ -20,7 +20,7 @@
 	const LABEL: Record<Role, string> = {
 		common: 'ประชาชน',
 		master: 'ผู้ดำเนินเกม',
-		imposter: 'ตัวปลอม'
+		imposter: 'คนร้าย'
 	};
 	const EN: Record<Role, string> = { common: 'People', master: 'Moderator', imposter: 'Imposter' };
 

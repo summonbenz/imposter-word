@@ -3,7 +3,7 @@ import {
 	QUESTION_CHOICES,
 	ROUND_CHOICES,
 	VOTE_CHOICES,
-	roleOf,
+	CODE_LENGTH,
 	type Outcome,
 	type Player,
 	type RoomConfig,
@@ -58,26 +58,34 @@ export function computeOutcome(args: {
 	return args.accusedUid === args.imposterUid ? 'COMMONS_WIN' : 'IMPOSTER_WIN';
 }
 
+// Points follow the ballot, not the table: only players who named the imposter
+// earn, and what they earn depends on whether the table followed them.
 export function computeScoreDeltas(args: {
 	outcome: Outcome;
 	players: Player[];
-	masterUid: string | null;
 	imposterUid: string | null;
-	wordFoundBy: string | null; // +1 bonus for the guesser whenever the word was found
+	votes: Record<string, string>; // voterUid -> targetUid
 }): Record<string, number> {
 	const d: Record<string, number> = {};
 	for (const p of args.players) d[p.uid] = 0;
+	const imposterUid = args.imposterUid;
+	if (args.outcome === 'ALL_LOSE' || !imposterUid) return d;
+
+	// the imposter naming themselves is not a correct call
+	const correct = args.players
+		.map((p) => p.uid)
+		.filter((u) => u !== imposterUid && args.votes[u] === imposterUid);
+
 	if (args.outcome === 'COMMONS_WIN') {
-		for (const p of args.players) {
-			if (roleOf(p.uid, args.masterUid, args.imposterUid) !== 'imposter') d[p.uid] = 1;
-		}
-	} else if (args.outcome === 'IMPOSTER_WIN') {
-		for (const p of args.players) {
-			if (roleOf(p.uid, args.masterUid, args.imposterUid) === 'imposter') d[p.uid] = 2;
-		}
-	}
-	if (args.outcome !== 'ALL_LOSE' && args.wordFoundBy && args.wordFoundBy in d) {
-		d[args.wordFoundBy] += 1;
+		// the table got it: every voter who called it gets 2, the imposter nothing
+		for (const u of correct) d[u] = 2;
+	} else if (correct.length) {
+		// the table got it wrong, but a minority saw through it
+		for (const u of correct) d[u] = 1;
+		d[imposterUid] = 1;
+	} else {
+		// nobody named the imposter at all
+		d[imposterUid] = 2;
 	}
 	return d;
 }
@@ -106,6 +114,7 @@ export function shuffle<T>(arr: readonly T[]): T[] {
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export function genCode(): string {
 	let s = '';
-	for (let i = 0; i < 4; i++) s += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+	for (let i = 0; i < CODE_LENGTH; i++)
+		s += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
 	return s;
 }
