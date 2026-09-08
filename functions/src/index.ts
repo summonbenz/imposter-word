@@ -464,6 +464,9 @@ export const lockVote = onCall(async (req) => {
 		requireMember(room, uid);
 		if (!target || !room.playerUids.includes(target))
 			throw new HttpsError('invalid-argument', 'เลือกผู้เล่นไม่ถูกต้อง');
+		// the Moderator sits out of suspicion entirely — a vote can never land on them
+		if (target === room.masterUid)
+			throw new HttpsError('invalid-argument', 'โหวตผู้ดำเนินเกมไม่ได้');
 		if (vSnap.exists) throw new HttpsError('failed-precondition', 'ล็อกโหวตไปแล้ว');
 		t.set(voteRef(code, uid), { targetUid: target, at: nowMs() } satisfies VoteDoc);
 		const locked = room.votesLocked + 1;

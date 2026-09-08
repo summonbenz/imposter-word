@@ -12,6 +12,7 @@
 	import RoleCard from '$lib/components/RoleCard.svelte';
 	import Link from '@lucide/svelte/icons/link';
 	import EyeOff from '@lucide/svelte/icons/eye-off';
+	import Eye from '@lucide/svelte/icons/eye';
 	import User from '@lucide/svelte/icons/user';
 
 	const code = ($page.params.code ?? '').toUpperCase();
@@ -30,6 +31,25 @@
 	let copiedLink = $state(false);
 	let needName = $state(false);
 	let nameInput = $state('');
+	// role stays covered on the topbar by default — a shoulder-surfer glancing at the
+	// screen shouldn't get it for free; each player opts in per device.
+	const ROLE_VISIBLE_KEY = 'iw.roleVisible';
+	function loadRoleVisible(): boolean {
+		try {
+			return localStorage.getItem(ROLE_VISIBLE_KEY) === '1';
+		} catch {
+			return false;
+		}
+	}
+	let roleVisible = $state(loadRoleVisible());
+	function toggleRoleVisible() {
+		roleVisible = !roleVisible;
+		try {
+			localStorage.setItem(ROLE_VISIBLE_KEY, roleVisible ? '1' : '0');
+		} catch {
+			/* private mode — just won't stick across reloads */
+		}
+	}
 	let joining = $state(false);
 
 	const unsubs: Array<() => void> = [];
@@ -112,6 +132,10 @@
 			locked = false;
 			votePick = null;
 		}
+	});
+
+	$effect(() => {
+		if (r?.status === 'REVEAL') roleVisible = false;
 	});
 
 	function live(u: string): boolean {
@@ -264,7 +288,25 @@
 				{#if me}<User size={20} aria-label="User" /><span class="me">{me.name}</span>{/if}
 			</span>
 			{#if priv && inPlay}
-				<span class="role-chip {priv.role}">{ROLE_LABEL[priv.role]}</span>
+				<button
+					type="button"
+					class="role-chip"
+					class:revealed={roleVisible}
+					class:master={roleVisible && priv.role === 'master'}
+					class:imposter={roleVisible && priv.role === 'imposter'}
+					class:common={roleVisible && priv.role === 'common'}
+					onclick={toggleRoleVisible}
+					aria-pressed={roleVisible}
+					aria-label={roleVisible
+						? `ซ่อนบทบาท (${ROLE_LABEL[priv.role]})`
+						: 'แตะเพื่อดูบทบาทของคุณ'}
+				>
+					{#if roleVisible}
+						{ROLE_LABEL[priv.role]}
+					{:else}
+						<EyeOff size={13} aria-hidden="true" />
+					{/if}
+				</button>
 			{/if}
 			<span>{roundText}</span>
 		</div>
@@ -458,7 +500,7 @@
 				<h2>โหวตหาคนร้าย</h2>
 				<p class="hint">เลือกคนที่คุณคิดว่าแอบรู้คำมาตั้งแต่ต้น</p>
 				<div class="tokens">
-					{#each r.players as p (p.uid)}
+					{#each r.players.filter((p) => p.uid !== r.masterUid) as p (p.uid)}
 						<button
 							class="token"
 							class:picked={votePick === p.uid}
@@ -467,10 +509,10 @@
 						>
 							<span class="pip"></span>
 							<span>{p.name}{p.uid === uid ? ' (คุณ)' : ''}</span>
-							{#if r.masterUid === p.uid}<span class="chip">ผู้ดำเนินเกม</span>{/if}
 						</button>
 					{/each}
 				</div>
+				<p class="center-hint">โหวตผู้ดำเนินเกมไม่ได้ ตัดสิทธิ์สงสัยไว้ตั้งแต่แรก</p>
 				<button
 					class="btn btn-primary"
 					disabled={busy || locked || !votePick}
@@ -658,23 +700,38 @@
 	}
 
 	.role-chip {
+		appearance: none;
+		display: inline-flex;
+		align-items: center;
 		font-family: var(--display);
 		font-size: 12px;
 		letter-spacing: 0.06em;
 		line-height: 1.4;
 		padding: 3px 11px;
+		border: 1px dashed var(--edge);
+		background: transparent;
+		color: var(--ink-faint);
 		border-radius: var(--r-pill);
 		white-space: nowrap;
+		cursor: pointer;
 	}
-	.role-chip.master {
+	.role-chip:focus-visible {
+		outline: 2px solid var(--brass-hi);
+		outline-offset: 2px;
+	}
+	/* the colour is part of the secret — it only shows once revealed */
+	.role-chip.revealed {
+		border-color: transparent;
+	}
+	.role-chip.revealed.master {
 		background: var(--brass);
 		color: var(--brass-ink);
 	}
-	.role-chip.imposter {
+	.role-chip.revealed.imposter {
 		background: var(--red-deep);
 		color: var(--ink);
 	}
-	.role-chip.common {
+	.role-chip.revealed.common {
 		background: var(--jade);
 		color: var(--jade-ink);
 	}
