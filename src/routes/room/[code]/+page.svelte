@@ -378,6 +378,7 @@
 					<button class="btn btn-quiet" onclick={() => (renaming = false)} disabled={busy}>ยกเลิก</button>
 					<button class="btn btn-primary" onclick={submitRename} disabled={busy}>บันทึก</button>
 				</div>
+				{#if error}<p class="notice">{error}</p>{/if}
 			</div>
 		{/if}
 
@@ -753,7 +754,7 @@
 			</button>
 		{/if}
 
-		{#if error}<p class="notice">{error}</p>{/if}
+		{#if error && !renaming}<p class="notice">{error}</p>{/if}
 	{/if}
 </div>
 

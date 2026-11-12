@@ -34,5 +34,6 @@ export const api = {
 
 export function errText(e: unknown): string {
 	const m = (e as { message?: string })?.message;
-	return m && m !== 'INTERNAL' ? m : 'เกิดข้อผิดพลาด ลองใหม่อีกครั้ง';
+	// a missing/undeployed function surfaces as a bare "internal" (CORS-blocked 404)
+	return m && m.toLowerCase() !== 'internal' ? m : 'เกิดข้อผิดพลาด ลองใหม่อีกครั้ง';
 }
