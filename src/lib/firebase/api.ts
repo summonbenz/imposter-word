@@ -14,6 +14,7 @@ export const api = {
 	joinRoom: call<{ code: string; name: string }, Code>('joinRoom'),
 	leaveRoom: call<Code, { ok: boolean }>('leaveRoom'),
 	setReady: call<Code & { ready: boolean }, { ok: boolean }>('setReady'),
+	renameSelf: call<Code & { name: string }, { ok: boolean }>('renameSelf'),
 	updateConfig: call<Code & { config: Partial<RoomConfig> }, { ok: boolean }>('updateConfig'),
 	startRound: call<Code, { ok: boolean }>('startRound'),
 	ackReveal: call<Code, { ok: boolean }>('ackReveal'),

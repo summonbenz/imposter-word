@@ -14,6 +14,8 @@
 	import EyeOff from '@lucide/svelte/icons/eye-off';
 	import Eye from '@lucide/svelte/icons/eye';
 	import User from '@lucide/svelte/icons/user';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 
 	const code = ($page.params.code ?? '').toUpperCase();
 
@@ -51,6 +53,35 @@
 		}
 	}
 	let joining = $state(false);
+	let renaming = $state(false);
+	let renameInput = $state('');
+
+	function openRename() {
+		renameInput = me?.name ?? loadName();
+		renaming = true;
+	}
+
+	async function submitRename() {
+		const n = renameInput.trim();
+		if (!n) {
+			error = 'ใส่ชื่อเล่นก่อน';
+			return;
+		}
+		if (n === me?.name) {
+			renaming = false;
+			return;
+		}
+		await act(async () => {
+			await api.renameSelf({ code, name: n });
+			saveName(n);
+			renaming = false;
+		});
+	}
+
+	function restartToLobby() {
+		if (!confirm('รีสตาร์ทเกม? ทุกคนจะกลับไปล็อบบี้ และแต้มทั้งหมดจะถูกล้าง')) return;
+		act(() => api.rematch({ code }));
+	}
 
 	const unsubs: Array<() => void> = [];
 
@@ -285,7 +316,18 @@
 		<div class="header">
 			<span class="seat">
 				<span class="room">{r.code}</span>
-				{#if me}<User size={20} aria-label="User" /><span class="me">{me.name}</span>{/if}
+				{#if me}
+					<button
+						type="button"
+						class="me-btn"
+						onclick={() => (renaming ? (renaming = false) : openRename())}
+						aria-expanded={renaming}
+						aria-label={`เปลี่ยนชื่อ (ตอนนี้ ${me.name})`}
+					>
+						<User size={20} aria-hidden="true" /><span class="me">{me.name}</span>
+						<Pencil size={12} aria-hidden="true" />
+					</button>
+				{/if}
 			</span>
 			{#if priv && inPlay}
 				<button
@@ -310,6 +352,34 @@
 			{/if}
 			<span>{roundText}</span>
 		</div>
+
+		{#if renaming && me}
+			<div class="paper rename">
+				<div class="field">
+					<label class="field-label" for="rename">เปลี่ยนชื่อเล่น</label>
+					<input
+						class="input"
+						id="rename"
+						type="text"
+						bind:value={renameInput}
+						maxlength="20"
+						enterkeyhint="done"
+						onkeydown={(e) => {
+							if (e.key === 'Enter') {
+								e.preventDefault();
+								submitRename();
+							} else if (e.key === 'Escape') {
+								renaming = false;
+							}
+						}}
+					/>
+				</div>
+				<div class="btns">
+					<button class="btn btn-quiet" onclick={() => (renaming = false)} disabled={busy}>ยกเลิก</button>
+					<button class="btn btn-primary" onclick={submitRename} disabled={busy}>บันทึก</button>
+				</div>
+			</div>
+		{/if}
 
 		{#if r.status === 'LOBBY'}
 			<div class="stage">
@@ -676,6 +746,13 @@
 			</div>
 		{/if}
 
+		{#if isHost && r.status !== 'LOBBY' && r.status !== 'MATCH_OVER'}
+			<button class="btn btn-quiet restart" onclick={restartToLobby} disabled={busy}>
+				<RotateCcw size={15} aria-hidden="true" />
+				รีสตาร์ทเกม กลับล็อบบี้
+			</button>
+		{/if}
+
 		{#if error}<p class="notice">{error}</p>{/if}
 	{/if}
 </div>
@@ -690,6 +767,30 @@
 		align-items: baseline;
 		gap: 9px;
 		min-width: 0;
+	}
+	.me-btn {
+		appearance: none;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		min-width: 0;
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--ink-faint);
+		font: inherit;
+		cursor: pointer;
+	}
+	.me-btn:focus-visible {
+		outline: 2px solid var(--brass-hi);
+		outline-offset: 2px;
+	}
+	.restart {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 7px;
+		margin-top: 8px;
 	}
 	.me {
 		color: var(--ink-dim);

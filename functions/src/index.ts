@@ -193,6 +193,29 @@ export const setReady = onCall(async (req) => {
 	return { ok: true };
 });
 
+// rename yourself at any point; names baked into this round's results follow along
+export const renameSelf = onCall(async (req) => {
+	const uid = requireAuth(req);
+	const code = cleanCode(req.data?.code);
+	const name = cleanName(req.data?.name);
+	await withRoom(code, (room, t) => {
+		requireMember(room, uid);
+		const r = room.results;
+		t.update(roomRef(code), {
+			players: room.players.map((p) => (p.uid === uid ? { ...p, name } : p)),
+			results: r
+				? {
+						...r,
+						tally: r.tally.map((e) => (e.uid === uid ? { ...e, name } : e)),
+						imposterName: r.imposterUid === uid ? name : r.imposterName
+					}
+				: null,
+			expiresAt: nextExpiry()
+		});
+	});
+	return { ok: true };
+});
+
 export const updateConfig = onCall(async (req) => {
 	const uid = requireAuth(req);
 	const code = cleanCode(req.data?.code);
@@ -599,12 +622,23 @@ export const endMatch = onCall(async (req) => {
 	return { ok: true };
 });
 
+// back to the lobby with scores wiped — from the end screen, or mid-match as a restart.
+// The word history survives so a restarted match doesn't re-deal a word people just saw.
 export const rematch = onCall(async (req) => {
 	const uid = requireAuth(req);
 	const code = cleanCode(req.data?.code);
-	await withRoom(code, (room, t) => {
+	await db.runTransaction(async (t) => {
+		const [rSnap, sSnap] = await t.getAll(roomRef(code), secretRef(code));
+		if (!rSnap.exists) throw new HttpsError('not-found', 'ไม่พบห้องนี้');
+		const room = rSnap.data() as PublicRoom;
 		requireHost(room, uid);
-		if (room.status !== 'MATCH_OVER') throw new HttpsError('failed-precondition', 'แมตช์ยังไม่จบ');
+		if (room.status === 'LOBBY') return;
+		const used = sSnap.exists ? ((sSnap.data() as SecretState).usedWords ?? []) : [];
+		for (const p of room.players) {
+			t.delete(privateRef(code, p.uid));
+			t.delete(voteRef(code, p.uid));
+		}
+		t.set(secretRef(code), { usedWords: used });
 		t.update(roomRef(code), {
 			status: 'LOBBY',
 			round: 0,
@@ -618,7 +652,6 @@ export const rematch = onCall(async (req) => {
 			results: null,
 			expiresAt: nextExpiry()
 		});
-		t.delete(secretRef(code));
 	});
 	return { ok: true };
 });
