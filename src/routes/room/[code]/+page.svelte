@@ -16,6 +16,7 @@
 	import User from '@lucide/svelte/icons/user';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import UserX from '@lucide/svelte/icons/user-x';
 
 	const code = ($page.params.code ?? '').toUpperCase();
 
@@ -78,6 +79,18 @@
 		});
 	}
 
+	// mirrors LIVE_PHASES on the server: a kick here voids the round
+	const LIVE = ['REVEAL', 'QUESTION', 'DISCUSSION', 'VOTE', 'TIEBREAK'];
+
+	function kick(p: Player) {
+		const live = !!r && LIVE.includes(r.status);
+		const msg = live
+			? `เตะ ${p.name} ออก? รอบที่เล่นอยู่จะถูกยกเลิก และทุกคนกลับล็อบบี้ (แต้มยังอยู่)`
+			: `เตะ ${p.name} ออกจากห้อง?`;
+		if (!confirm(msg)) return;
+		act(() => api.kickPlayer({ code, targetUid: p.uid }));
+	}
+
 	function restartToLobby() {
 		if (!confirm('รีสตาร์ทเกม? ทุกคนจะกลับไปล็อบบี้ และแต้มทั้งหมดจะถูกล้าง')) return;
 		act(() => api.rematch({ code }));
@@ -137,8 +150,14 @@
 		}
 	}
 
-	const r = $derived(room && room !== 'missing' ? (room as PublicRoom) : null);
+	const r = $derived(room && room !== 'missing' && room !== 'denied' ? (room as PublicRoom) : null);
 	const me = $derived(r && uid ? (r.players.find((p) => p.uid === uid) ?? null) : null);
+	// once we've been seated, losing read access means the host removed us
+	let seated = $state(false);
+	$effect(() => {
+		if (me) seated = true;
+	});
+	const kicked = $derived(room === 'denied' && seated);
 	const isHost = $derived(!!me?.isHost);
 	const isMaster = $derived(!!r && !!uid && r.masterUid === uid);
 	const masterName = $derived(r ? (r.players.find((p) => p.uid === r.masterUid)?.name ?? '') : '');
@@ -303,7 +322,13 @@
 			{#if error}<p class="notice">{error}</p>{/if}
 			<a class="center-hint" href="/">ยังไม่รู้จักเกมนี้ ดูวิธีเล่น</a>
 		</div>
-	{:else if room === 'missing'}
+	{:else if kicked}
+		<div class="stage">
+			<h1 class="proclaim">คุณถูกเตะออกจากห้อง {code}</h1>
+			<p class="hint">host นำคุณออกจากห้องนี้แล้ว ถ้าห้องกลับมาที่ล็อบบี้ เปิดลิงก์เดิมเพื่อเข้าใหม่ได้</p>
+			<a class="btn btn-primary" href="/">กลับหน้าแรก</a>
+		</div>
+	{:else if room === 'missing' || room === 'denied'}
 		<div class="stage">
 			<h1 class="proclaim">ไม่พบห้อง {code}</h1>
 			<p class="hint">ห้องอาจปิดไปแล้ว หรือพิมพ์รหัสผิด</p>
@@ -382,6 +407,8 @@
 			</div>
 		{/if}
 
+		{#if r.notice}<p class="table-notice">{r.notice}</p>{/if}
+
 		{#if r.status === 'LOBBY'}
 			<div class="stage">
 				<span class="hint">รหัสห้อง ส่งให้เพื่อน</span>
@@ -406,6 +433,11 @@
 							<span class="who">
 								{#if p.isHost}<span class="chip chip-host">host</span>{/if}
 								{#if p.ready}<span class="chip chip-ready">พร้อม</span>{/if}
+								{#if isHost && p.uid !== uid}
+									<button class="kick" onclick={() => kick(p)} disabled={busy} aria-label={`เตะ ${p.name} ออก`}>
+										<UserX size={16} aria-hidden="true" />
+									</button>
+								{/if}
 							</span>
 						</div>
 					{/each}
@@ -747,6 +779,30 @@
 			</div>
 		{/if}
 
+		{#if isHost && r.status !== 'LOBBY'}
+			<details class="paper manage">
+				<summary>จัดการผู้เล่น ({r.players.length} คน)</summary>
+				<div class="roster">
+					{#each r.players as p (p.uid)}
+						<div class="roster-row">
+							<span class="who">
+								<span class="status-dot" class:live={live(p.uid)}></span>
+								<span>{p.name}{p.uid === uid ? ' (คุณ)' : ''}</span>
+							</span>
+							{#if p.uid !== uid}
+								<button class="kick" onclick={() => kick(p)} disabled={busy} aria-label={`เตะ ${p.name} ออก`}>
+									<UserX size={16} aria-hidden="true" />
+								</button>
+							{/if}
+						</div>
+					{/each}
+				</div>
+				{#if LIVE.includes(r.status)}
+					<p class="center-hint">เตะระหว่างรอบ รอบนี้จะถูกยกเลิกและกลับล็อบบี้ (แต้มยังอยู่)</p>
+				{/if}
+			</details>
+		{/if}
+
 		{#if isHost && r.status !== 'LOBBY' && r.status !== 'MATCH_OVER'}
 			<button class="btn btn-quiet restart" onclick={restartToLobby} disabled={busy}>
 				<RotateCcw size={15} aria-hidden="true" />
@@ -785,6 +841,49 @@
 	.me-btn:focus-visible {
 		outline: 2px solid var(--brass-hi);
 		outline-offset: 2px;
+	}
+	.kick {
+		appearance: none;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 30px;
+		height: 30px;
+		padding: 0;
+		border: 1px solid var(--edge-hair);
+		border-radius: 50%;
+		background: transparent;
+		color: var(--ink-faint);
+		cursor: pointer;
+	}
+	.kick:hover:not(:disabled) {
+		color: var(--red);
+		border-color: var(--red);
+	}
+	.kick:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+	.kick:focus-visible {
+		outline: 2px solid var(--brass-hi);
+		outline-offset: 2px;
+	}
+	.manage summary {
+		cursor: pointer;
+		font-size: 13px;
+		color: var(--ink-dim);
+	}
+	.manage[open] summary {
+		margin-bottom: 10px;
+	}
+	.table-notice {
+		margin: 0;
+		text-align: center;
+		font-size: 13px;
+		color: var(--ink-dim);
+		padding: 8px 12px;
+		border: 1px dashed var(--edge);
+		border-radius: var(--r-card);
 	}
 	.restart {
 		display: inline-flex;

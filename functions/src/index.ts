@@ -40,6 +40,10 @@ const roomRef = (code: string) => db.doc(`rooms/${code}`);
 const secretRef = (code: string) => roomRef(code).collection('secret').doc('state');
 const privateRef = (code: string, uid: string) => roomRef(code).collection('private').doc(uid);
 const voteRef = (code: string, uid: string) => roomRef(code).collection('votes').doc(uid);
+const presenceRef = (code: string, uid: string) => roomRef(code).collection('presence').doc(uid);
+
+// phases where a round is being played out and its secret still matters
+const LIVE_PHASES: PublicRoom['status'][] = ['REVEAL', 'QUESTION', 'DISCUSSION', 'VOTE', 'TIEBREAK'];
 
 function requireAuth(req: CallableRequest): string {
 	const uid = req.auth?.uid;
@@ -117,7 +121,8 @@ export const createRoom = onCall(async (req) => {
 					wordFoundBy: null,
 					revealAcks: [],
 					votesLocked: 0,
-					results: null
+					results: null,
+					notice: null
 				};
 				t.set(ref, room);
 			});
@@ -231,6 +236,76 @@ export const updateConfig = onCall(async (req) => {
 	return { ok: true };
 });
 
+/** Drop the table back to the lobby: dealt roles and ballots go, everyone un-readies. */
+function resetToLobby(
+	t: Transaction,
+	code: string,
+	room: PublicRoom,
+	players: Player[],
+	opts: { keepScores: boolean; round: number; notice: string | null }
+) {
+	for (const p of room.players) {
+		t.delete(privateRef(code, p.uid));
+		t.delete(voteRef(code, p.uid));
+	}
+	t.update(roomRef(code), {
+		status: 'LOBBY',
+		round: opts.round,
+		players: players.map((p) => ({
+			...p,
+			ready: false,
+			score: opts.keepScores ? p.score : 0
+		})),
+		playerUids: players.map((p) => p.uid),
+		masterUid: null,
+		masterOrder: [],
+		phaseEndsAt: null,
+		wordFoundBy: null,
+		revealAcks: [],
+		votesLocked: 0,
+		results: null,
+		notice: opts.notice,
+		expiresAt: nextExpiry()
+	});
+}
+
+// Host removes a player. Mid-round the round is voided rather than played on short-handed:
+// carrying on would tell the table whether the kicked player was the Imposter.
+export const kickPlayer = onCall(async (req) => {
+	const uid = requireAuth(req);
+	const code = cleanCode(req.data?.code);
+	const target = typeof req.data?.targetUid === 'string' ? req.data.targetUid : null;
+	await withRoom(code, (room, t) => {
+		requireHost(room, uid);
+		if (!target) throw new HttpsError('invalid-argument', 'เลือกผู้เล่นที่จะเตะ');
+		if (target === uid) throw new HttpsError('invalid-argument', 'เตะตัวเองไม่ได้');
+		const kicked = room.players.find((p) => p.uid === target);
+		if (!kicked) return; // already gone
+		const players = room.players.filter((p) => p.uid !== target);
+		t.delete(presenceRef(code, target));
+		t.delete(privateRef(code, target));
+		t.delete(voteRef(code, target));
+
+		if (LIVE_PHASES.includes(room.status)) {
+			resetToLobby(t, code, room, players, {
+				keepScores: true,
+				round: Math.max(0, room.round - 1), // the voided round doesn't count
+				notice: `${kicked.name} ถูกเตะออก รอบที่เล่นอยู่ถูกยกเลิก แต้มยังอยู่ครบ`
+			});
+			return;
+		}
+		t.update(roomRef(code), {
+			players,
+			playerUids: players.map((p) => p.uid),
+			masterOrder: room.masterOrder.filter((u) => u !== target),
+			revealAcks: room.revealAcks.filter((u) => u !== target),
+			notice: `${kicked.name} ถูกเตะออกจากห้อง`,
+			expiresAt: nextExpiry()
+		});
+	});
+	return { ok: true };
+});
+
 // ---------- round lifecycle ----------
 
 function writeNewRound(
@@ -277,6 +352,7 @@ function writeNewRound(
 		revealAcks: [],
 		votesLocked: 0,
 		results: null,
+		notice: null,
 		expiresAt: nextExpiry()
 	});
 }
@@ -605,6 +681,15 @@ export const nextRound = onCall(async (req) => {
 			t.update(roomRef(code), { status: 'MATCH_OVER', phaseEndsAt: null, expiresAt: nextExpiry() });
 			return;
 		}
+		// kicks can leave the table short — wait in the lobby for more people, scores intact
+		if (room.players.length < MIN_PLAYERS) {
+			resetToLobby(t, code, room, room.players, {
+				keepScores: true,
+				round: room.round,
+				notice: `ผู้เล่นเหลือไม่ถึง ${MIN_PLAYERS} คน รอเพื่อนเข้ามาเพิ่มก่อนเล่นต่อ`
+			});
+			return;
+		}
 		const used = sSnap.exists ? ((sSnap.data() as SecretState).usedWords ?? []) : [];
 		writeNewRound(t, code, room, { fromLobby: false, used });
 	});
@@ -634,24 +719,8 @@ export const rematch = onCall(async (req) => {
 		requireHost(room, uid);
 		if (room.status === 'LOBBY') return;
 		const used = sSnap.exists ? ((sSnap.data() as SecretState).usedWords ?? []) : [];
-		for (const p of room.players) {
-			t.delete(privateRef(code, p.uid));
-			t.delete(voteRef(code, p.uid));
-		}
 		t.set(secretRef(code), { usedWords: used });
-		t.update(roomRef(code), {
-			status: 'LOBBY',
-			round: 0,
-			players: room.players.map((p) => ({ ...p, score: 0, ready: false })),
-			masterUid: null,
-			masterOrder: [],
-			phaseEndsAt: null,
-			wordFoundBy: null,
-			revealAcks: [],
-			votesLocked: 0,
-			results: null,
-			expiresAt: nextExpiry()
-		});
+		resetToLobby(t, code, room, room.players, { keepScores: false, round: 0, notice: null });
 	});
 	return { ok: true };
 });

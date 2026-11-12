@@ -3,14 +3,15 @@ import { readable } from 'svelte/store';
 import type { PrivateState, PublicRoom } from '$game/types';
 import { db } from './client';
 
-export type RoomState = PublicRoom | 'missing' | null;
+// 'denied' = rules refused the read: we're not (or no longer) in playerUids, e.g. kicked
+export type RoomState = PublicRoom | 'missing' | 'denied' | null;
 
 export function roomStore(code: string) {
 	return readable<RoomState>(null, (set) =>
 		onSnapshot(
 			doc(db, 'rooms', code),
 			(snap) => set(snap.exists() ? (snap.data() as PublicRoom) : 'missing'),
-			() => set('missing')
+			(e) => set(e.code === 'permission-denied' ? 'denied' : 'missing')
 		)
 	);
 }

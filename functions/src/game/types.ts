@@ -95,6 +95,7 @@ export interface PublicRoom {
 	revealAcks: string[];
 	votesLocked: number;
 	results: RoundResults | null;
+	notice?: string | null; // one-line table announcement (e.g. a kick); cleared when a round deals
 }
 
 // rooms/{code}/private/{uid}
