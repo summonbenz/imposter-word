@@ -17,6 +17,8 @@
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import UserX from '@lucide/svelte/icons/user-x';
+	import CircleCheck from '@lucide/svelte/icons/circle-check';
+	import CircleDashed from '@lucide/svelte/icons/circle-dashed';
 
 	const code = ($page.params.code ?? '').toUpperCase();
 
@@ -539,7 +541,20 @@
 						</button>
 					{/if}
 				</div>
-				<p class="center-hint">พร้อมแล้ว {r.revealAcks.length} จาก {r.players.length} คน</p>
+				<ul class="acks" role="list" aria-label={`พร้อมแล้ว ${r.revealAcks.length} จาก ${r.players.length} คน`}>
+					{#each r.players as p (p.uid)}
+						{@const done = r.revealAcks.includes(p.uid)}
+						<li class:done>
+							{#if done}
+								<CircleCheck size={15} aria-hidden="true" />
+							{:else}
+								<CircleDashed size={15} aria-hidden="true" />
+							{/if}
+							<span>{p.name}{p.uid === uid ? ' (คุณ)' : ''}</span>
+							<span class="sr-only">{done ? 'พร้อมแล้ว' : 'ยังไม่พร้อม'}</span>
+						</li>
+					{/each}
+				</ul>
 			{/if}
 
 		{:else if r.status === 'QUESTION'}
@@ -841,6 +856,45 @@
 	.me-btn:focus-visible {
 		outline: 2px solid var(--brass-hi);
 		outline-offset: 2px;
+	}
+	/* who has seen their card — waiting seats stay faint so the stragglers stand out */
+	.acks {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 6px;
+	}
+	.acks li {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		max-width: 100%;
+		padding: 4px 10px 4px 7px;
+		border: 1px dashed var(--edge);
+		border-radius: var(--r-pill);
+		font-size: 13px;
+		color: var(--ink-faint);
+	}
+	.acks li span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.acks li.done {
+		border: 1px solid transparent;
+		background: var(--jade);
+		color: var(--jade-ink);
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		white-space: nowrap;
 	}
 	.kick {
 		appearance: none;
