@@ -94,6 +94,7 @@ export interface PublicRoom {
 	wordFoundBy: string | null; // uid the Moderator marked as the guesser, or null
 	revealAcks: string[];
 	votesLocked: number;
+	votedUids?: string[]; // who has locked a ballot this vote (never whom they picked)
 	results: RoundResults | null;
 	notice?: string | null; // one-line table announcement (e.g. a kick); cleared when a round deals
 }

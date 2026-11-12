@@ -121,6 +121,7 @@ export const createRoom = onCall(async (req) => {
 					wordFoundBy: null,
 					revealAcks: [],
 					votesLocked: 0,
+					votedUids: [],
 					results: null,
 					notice: null
 				};
@@ -263,6 +264,7 @@ function resetToLobby(
 		wordFoundBy: null,
 		revealAcks: [],
 		votesLocked: 0,
+		votedUids: [],
 		results: null,
 		notice: opts.notice,
 		expiresAt: nextExpiry()
@@ -351,6 +353,7 @@ function writeNewRound(
 		wordFoundBy: null,
 		revealAcks: [],
 		votesLocked: 0,
+		votedUids: [],
 		results: null,
 		notice: null,
 		expiresAt: nextExpiry()
@@ -477,6 +480,7 @@ function toVote(t: Transaction, code: string, room: PublicRoom) {
 		status: 'VOTE',
 		phaseEndsAt: room.config.voteSeconds > 0 ? nowMs() + room.config.voteSeconds * 1000 : null,
 		votesLocked: 0,
+		votedUids: [],
 		expiresAt: nextExpiry()
 	});
 }
@@ -569,7 +573,11 @@ export const lockVote = onCall(async (req) => {
 		if (vSnap.exists) throw new HttpsError('failed-precondition', 'ล็อกโหวตไปแล้ว');
 		t.set(voteRef(code, uid), { targetUid: target, at: nowMs() } satisfies VoteDoc);
 		const locked = room.votesLocked + 1;
-		t.update(roomRef(code), { votesLocked: locked, expiresAt: nextExpiry() });
+		t.update(roomRef(code), {
+			votesLocked: locked,
+			votedUids: [...(room.votedUids ?? []), uid],
+			expiresAt: nextExpiry()
+		});
 		if (locked >= room.players.length) triggerFinalize = true;
 	});
 

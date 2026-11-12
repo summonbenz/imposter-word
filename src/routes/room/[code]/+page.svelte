@@ -171,6 +171,8 @@
 	const standings = $derived(r ? [...r.players].sort((a, b) => b.score - a.score) : []);
 	const allReady = $derived(!!r && r.players.length >= MIN_PLAYERS && r.players.every((p) => p.ready));
 	const acked = $derived(!!r && !!uid && r.revealAcks.includes(uid));
+	// the room doc remembers our ballot, so a reload doesn't offer the vote button again
+	const iVoted = $derived(locked || (!!r && !!uid && (r.votedUids ?? []).includes(uid)));
 	const tiedPlayers = $derived<Player[]>(
 		r && res?.tiedUids?.length
 			? res.tiedUids
@@ -291,6 +293,23 @@
 				};
 	});
 </script>
+
+{#snippet statusChips(players: Player[], doneUids: string[], doneLabel: string, waitLabel: string)}
+	<ul class="acks" role="list" aria-label={`${doneLabel} ${doneUids.length} จาก ${players.length} คน`}>
+		{#each players as p (p.uid)}
+			{@const done = doneUids.includes(p.uid)}
+			<li class:done>
+				{#if done}
+					<CircleCheck size={15} aria-hidden="true" />
+				{:else}
+					<CircleDashed size={15} aria-hidden="true" />
+				{/if}
+				<span>{p.name}{p.uid === uid ? ' (คุณ)' : ''}</span>
+				<span class="sr-only">{done ? doneLabel : waitLabel}</span>
+			</li>
+		{/each}
+	</ul>
+{/snippet}
 
 <div class="panel">
 	{#if needName}
@@ -541,20 +560,7 @@
 						</button>
 					{/if}
 				</div>
-				<ul class="acks" role="list" aria-label={`พร้อมแล้ว ${r.revealAcks.length} จาก ${r.players.length} คน`}>
-					{#each r.players as p (p.uid)}
-						{@const done = r.revealAcks.includes(p.uid)}
-						<li class:done>
-							{#if done}
-								<CircleCheck size={15} aria-hidden="true" />
-							{:else}
-								<CircleDashed size={15} aria-hidden="true" />
-							{/if}
-							<span>{p.name}{p.uid === uid ? ' (คุณ)' : ''}</span>
-							<span class="sr-only">{done ? 'พร้อมแล้ว' : 'ยังไม่พร้อม'}</span>
-						</li>
-					{/each}
-				</ul>
+				{@render statusChips(r.players, r.revealAcks, 'พร้อมแล้ว', 'ยังไม่พร้อม')}
 			{/if}
 
 		{:else if r.status === 'QUESTION'}
@@ -622,7 +628,7 @@
 						<button
 							class="token"
 							class:picked={votePick === p.uid}
-							disabled={locked || p.uid === uid}
+							disabled={iVoted || p.uid === uid}
 							onclick={() => (votePick = p.uid)}
 						>
 							<span class="pip"></span>
@@ -633,16 +639,17 @@
 				<p class="center-hint">โหวตผู้ดำเนินเกมไม่ได้ ตัดสิทธิ์สงสัยไว้ตั้งแต่แรก</p>
 				<button
 					class="btn btn-primary"
-					disabled={busy || locked || !votePick}
+					disabled={busy || iVoted || !votePick}
 					onclick={() =>
 						act(async () => {
 							await api.lockVote({ code, targetUid: votePick! });
 							locked = true;
 						})}
 				>
-					{locked ? 'โหวตแล้ว' : 'โหวต'}
+					{iVoted ? 'โหวตแล้ว' : 'โหวต'}
 				</button>
-				<p class="center-hint">โหวตแล้ว {r.votesLocked} จาก {r.players.length} คน เปิดพร้อมกันเมื่อครบหรือหมดเวลา</p>
+				{@render statusChips(r.players, r.votedUids ?? [], 'โหวตแล้ว', 'ยังไม่โหวต')}
+				<p class="center-hint">ผลเปิดพร้อมกันเมื่อโหวตครบหรือหมดเวลา</p>
 			</div>
 
 		{:else if r.status === 'TIEBREAK'}
